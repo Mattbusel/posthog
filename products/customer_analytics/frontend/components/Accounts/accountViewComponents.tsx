@@ -23,6 +23,7 @@ import { AccountOpportunitiesExpansion } from './AccountOpportunitiesExpansion'
 import { AccountRelatedUsersExpansion } from './AccountRelatedUsersExpansion'
 import { AccountRelationshipsExpansion } from './AccountRelationshipsExpansion'
 import { AccountSessionReplays } from './AccountSessionReplays'
+import { AccountTopPagesWidget } from './AccountTopPagesWidget'
 import { AccountUsersTable } from './AccountUsersTable'
 import type {
     AccountViewTileConfig,
@@ -51,6 +52,7 @@ export type AccountViewComponentKind =
     | 'session_replays'
     | 'dot_matrix'
     | 'agent_activity'
+    | 'top_pages'
 
 interface AccountViewComponentBase {
     tagName: string
@@ -72,7 +74,7 @@ export interface AccountSystemTabDefinition extends AccountViewComponentBase {
 export type AccountViewComponentDefinition =
     | AccountSystemTabDefinition
     | (AccountViewComponentBase & {
-          kind: 'properties' | 'session_replays' | 'dot_matrix' | 'agent_activity'
+          kind: 'properties' | 'session_replays' | 'dot_matrix' | 'agent_activity' | 'top_pages'
           systemTabId?: never
       })
 
@@ -155,6 +157,13 @@ export const ACCOUNT_VIEW_COMPONENTS: AccountViewComponentDefinition[] = [
         label: 'Agent activity',
         featureFlag: FEATURE_FLAGS.CUSTOMER_ANALYTICS_PRODUCT_USAGE,
         Component: (props) => <AccountAgentActivityWidget accountId={props.accountId} {...getTileLogicProps(props)} />,
+    },
+    {
+        kind: 'top_pages',
+        tagName: 'TopPages',
+        label: 'Top pages',
+        featureFlag: FEATURE_FLAGS.CUSTOMER_ANALYTICS_PRODUCT_USAGE,
+        Component: (props) => <AccountTopPagesWidget accountId={props.accountId} {...getTileLogicProps(props)} />,
     },
     {
         kind: 'notes',
