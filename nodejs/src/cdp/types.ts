@@ -383,7 +383,6 @@ export type CyclotronJobInvocation = {
     sealed?: string
     // The stored token could not be opened, so the state holds only its plaintext fields and must not run.
     stateUnreadable?: true
-    // Wait wakes the hogflow subscription matcher recorded while this job was in flight.
     pendingWake?: PendingWake
 }
 
