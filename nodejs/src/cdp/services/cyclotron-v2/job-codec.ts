@@ -199,7 +199,7 @@ export type JobRow = Pick<
     | 'state'
     | 'cancelRequestedAt'
 > &
-    Partial<Pick<CyclotronV2DequeuedJob, 'lockId'>>
+    Partial<Pick<CyclotronV2DequeuedJob, 'lockId' | 'pendingWake'>>
 
 /** Without an opener the invocation holds only the plaintext fields, which is enough for a reader that does not run the job. */
 export function v2JobToInvocation(job: JobRow, opener?: StateOpener): CyclotronJobInvocation {
@@ -231,6 +231,10 @@ export function v2JobToInvocation(job: JobRow, opener?: StateOpener): CyclotronJ
 
     if (parsed.stateUnreadable) {
         invocation.stateUnreadable = true
+    }
+
+    if (job.pendingWake) {
+        invocation.pendingWake = job.pendingWake
     }
 
     return invocation

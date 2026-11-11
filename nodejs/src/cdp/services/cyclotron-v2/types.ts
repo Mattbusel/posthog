@@ -57,6 +57,16 @@ export type CyclotronV2IdempotentJobInit = {
 export type CyclotronV2IdempotencyKey = { fingerprint: string; reply: Record<string, unknown> | null }
 
 export type CyclotronV2IdempotentOutcome = 'created' | 'replayed' | 'mismatch'
+// A wake the subscription matcher recorded while the job was running, keyed by the
+// wait_until_condition action id it applies to. `at` is the database clock when it was written.
+export type PendingWakeEntry = {
+    kind: 'match' | 'recheck'
+    at: string
+    eventName?: string
+    eventUuid?: string
+    eventTimestamp?: string
+}
+export type PendingWake = Record<string, PendingWakeEntry>
 
 export type CyclotronV2IdempotentClaim = { outcome: CyclotronV2IdempotentOutcome; storedFingerprint?: string }
 
@@ -114,6 +124,7 @@ export interface CyclotronV2DequeuedJob {
     // responsible for terminating it (cancel() plus its own telemetry) instead of
     // executing it.
     readonly cancelRequestedAt: DateTime | null
+    readonly pendingWake: PendingWake | null
 
     ack(): Promise<void>
     fail(): Promise<void>
