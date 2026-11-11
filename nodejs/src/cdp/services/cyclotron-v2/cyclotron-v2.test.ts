@@ -128,6 +128,7 @@ interface RawJobRow {
     action_id: string | null
     cancel_requested_at: string | Date | null
     dequeue_seq: string | null
+    pending_wake: Record<string, unknown> | null
 }
 
 async function queryJob(id: string): Promise<RawJobRow> {
