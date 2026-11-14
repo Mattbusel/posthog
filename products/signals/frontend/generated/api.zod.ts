@@ -2100,7 +2100,7 @@ export const signalsScoutCreateBodyConfigOneRepositoriesMax = 10
 
 export const signalsScoutCreateBodyConfigOneWriteScopesMax = 16
 
-export const signalsScoutCreateBodyConfigOneReportActionsMax = 3
+export const signalsScoutCreateBodyConfigOneReportActionsMax = 1
 
 export const signalsScoutCreateBodyConfigOneMaxReportActionsPerDayMin = 0
 export const signalsScoutCreateBodyConfigOneMaxReportActionsPerDayMax = 20
@@ -2216,7 +2216,7 @@ export const SignalsScoutCreateBody = /* @__PURE__ */ zod
                     .max(signalsScoutCreateBodyConfigOneReportActionsMax)
                     .optional()
                     .describe(
-                        "Report actions this scout may start on inbox reports, from `ask`, `make_it_green`, `suggested_prompt`. Empty by default, and then every request the scout makes to start one is refused. `get_it_merged` can never be granted: a person merges. Each action starts an agent run that acts as the person the scout's runs act as. Only that person or a project admin can set it, and a scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
+                        "Report actions this scout may start on inbox reports, from `make_it_green`. Empty by default, and then every request the scout makes to start one is refused. Only actions with a fixed request are grantable, and a scout cannot send its own message with one. `get_it_merged` can never be granted: a person merges. Each action starts an agent run with the full access of the person the scout's runs act as, so only that person can add an action. A project admin can remove one. A scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
                     ),
                 max_report_actions_per_day: zod
                     .number()
@@ -2224,7 +2224,7 @@ export const SignalsScoutCreateBody = /* @__PURE__ */ zod
                     .max(signalsScoutCreateBodyConfigOneMaxReportActionsPerDayMax)
                     .optional()
                     .describe(
-                        'How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Changing it needs the same access as `report_actions`.'
+                        "How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Only the person the scout's runs act as can raise it. A project admin can lower it."
                     ),
                 lifecycle_locked: zod
                     .boolean()
@@ -2427,7 +2427,7 @@ export const signalsScoutConfigCreateBodyRepositoriesMax = 10
 
 export const signalsScoutConfigCreateBodyWriteScopesMax = 16
 
-export const signalsScoutConfigCreateBodyReportActionsMax = 3
+export const signalsScoutConfigCreateBodyReportActionsMax = 1
 
 export const signalsScoutConfigCreateBodyMaxReportActionsPerDayMin = 0
 export const signalsScoutConfigCreateBodyMaxReportActionsPerDayMax = 20
@@ -2501,7 +2501,7 @@ export const SignalsScoutConfigCreateBody = /* @__PURE__ */ zod
             .max(signalsScoutConfigCreateBodyReportActionsMax)
             .optional()
             .describe(
-                "Report actions this scout may start on inbox reports, from `ask`, `make_it_green`, `suggested_prompt`. Empty by default, and then every request the scout makes to start one is refused. `get_it_merged` can never be granted: a person merges. Each action starts an agent run that acts as the person the scout's runs act as. Only that person or a project admin can set it, and a scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
+                "Report actions this scout may start on inbox reports, from `make_it_green`. Empty by default, and then every request the scout makes to start one is refused. Only actions with a fixed request are grantable, and a scout cannot send its own message with one. `get_it_merged` can never be granted: a person merges. Each action starts an agent run with the full access of the person the scout's runs act as, so only that person can add an action. A project admin can remove one. A scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
             ),
         max_report_actions_per_day: zod
             .number()
@@ -2509,7 +2509,7 @@ export const SignalsScoutConfigCreateBody = /* @__PURE__ */ zod
             .max(signalsScoutConfigCreateBodyMaxReportActionsPerDayMax)
             .optional()
             .describe(
-                'How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Changing it needs the same access as `report_actions`.'
+                "How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Only the person the scout's runs act as can raise it. A project admin can lower it."
             ),
         lifecycle_locked: zod
             .boolean()
@@ -2688,7 +2688,7 @@ export const signalsScoutConfigUpdateBodyRepositoriesMax = 10
 
 export const signalsScoutConfigUpdateBodyWriteScopesMax = 16
 
-export const signalsScoutConfigUpdateBodyReportActionsMax = 3
+export const signalsScoutConfigUpdateBodyReportActionsMax = 1
 
 export const signalsScoutConfigUpdateBodyMaxReportActionsPerDayMin = 0
 export const signalsScoutConfigUpdateBodyMaxReportActionsPerDayMax = 20
@@ -2860,7 +2860,7 @@ export const SignalsScoutConfigUpdateBody = /* @__PURE__ */ zod
             .max(signalsScoutConfigUpdateBodyReportActionsMax)
             .optional()
             .describe(
-                "Report actions this scout may start on inbox reports, from `ask`, `make_it_green`, `suggested_prompt`. Empty by default, and then every request the scout makes to start one is refused. `get_it_merged` can never be granted: a person merges. Each action starts an agent run that acts as the person the scout's runs act as. Only that person or a project admin can set it, and a scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
+                "Report actions this scout may start on inbox reports, from `make_it_green`. Empty by default, and then every request the scout makes to start one is refused. Only actions with a fixed request are grantable, and a scout cannot send its own message with one. `get_it_merged` can never be granted: a person merges. Each action starts an agent run with the full access of the person the scout's runs act as, so only that person can add an action. A project admin can remove one. A scoped API key must carry `inbox:write` and `task:write`. A dry run (`emit=false`) never holds the grant. Applies from the scout's next run."
             ),
         max_report_actions_per_day: zod
             .number()
@@ -2868,7 +2868,7 @@ export const SignalsScoutConfigUpdateBody = /* @__PURE__ */ zod
             .max(signalsScoutConfigUpdateBodyMaxReportActionsPerDayMax)
             .optional()
             .describe(
-                'How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Changing it needs the same access as `report_actions`.'
+                "How many report actions this scout may start in a rolling 24 hours, across all its runs. Defaults to 3. Only the person the scout's runs act as can raise it. A project admin can lower it."
             ),
         precheck_query: zod
             .string()
