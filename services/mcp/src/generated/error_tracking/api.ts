@@ -15598,7 +15598,7 @@ export const ErrorTrackingTagRulesCreateBody = () => zod.object({
             ),
         })
         .describe(
-            'Property-group filters on event properties, evaluated against the first event of each new issue. Person, cohort, HogQL and other filter types are rejected.'
+            'Property-group filters on event properties, evaluated against the first event of each new issue. At least one filter is required. Person, cohort, HogQL and other filter types are rejected.'
         ),
     order_key: zod
         .number()
@@ -15774,7 +15774,7 @@ export const ErrorTrackingTagRulesPartialUpdateBody = () => zod.object({
         })
         .optional()
         .describe(
-            'Replacement event property filters. Omit to keep the existing filters. New filters apply only to issues created after the update, and existing labels stay.'
+            'Replacement event property filters, with at least one filter. Omit to keep the existing filters. New filters apply only to issues created after the update, and existing labels stay.'
         ),
 })
 
