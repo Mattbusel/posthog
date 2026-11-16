@@ -258,6 +258,7 @@ from products.signals.backend.report_task_actions import (
     AI_CONSENT_DISABLED_REASON,
     INBOX_REPORT_ACTION_EVENT,
     PULL_REQUEST_RUN_ACTIVE_DETAIL,
+    ParentRun,
     ReportActionState,
     ReportTaskActionContext,
     ReportTaskActionStartError,
@@ -4272,7 +4273,15 @@ class SignalReportViewSet(
         # create endpoint applies to an inbox discussion.
         code_access_allowed = code_access_required_response(request, self.organization) is None
         try:
-            started = start_report_task_action(context, report, report_action, code_access_allowed=code_access_allowed)
+            started = start_report_task_action(
+                context,
+                report,
+                report_action,
+                code_access_allowed=code_access_allowed,
+                parent=ParentRun(task_id=scout_grant.task_id, run_id=scout_grant.task_run_id)
+                if scout_grant is not None
+                else None,
+            )
         except ReportTaskCapExceeded as error:
             capture("limited", "signal_report_task_cap")
             return self._task_action_error("signal_report_task_cap", error.detail, status.HTTP_429_TOO_MANY_REQUESTS)

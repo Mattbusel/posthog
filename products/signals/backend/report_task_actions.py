@@ -35,6 +35,7 @@ from products.signals.backend.pr_ci_status import pr_ci_statuses_for_references,
 from products.signals.backend.report_urls import ReportLinkSource, build_report_url
 from products.signals.backend.task_profiles import INBOX
 from products.tasks.backend.facade import api as tasks_facade
+from products.tasks.backend.facade.agent_run_starts import AGENT_PARENT_RUN_ID_STATE_KEY, AGENT_PARENT_TASK_ID_STATE_KEY
 from products.tasks.backend.facade.ai_run_defaults import resolve_ai_run_defaults
 
 logger = structlog.get_logger(__name__)
@@ -456,14 +457,27 @@ def task_create_data(report: SignalReport, prompt: str) -> dict:
     }
 
 
-def task_run_data(*, report: SignalReport, prompt: str, user_id: int) -> dict:
-    return {
+@frozen
+class ParentRun:
+    """The run whose sandbox started a report action."""
+
+    task_id: str
+    run_id: str
+
+
+def task_run_data(*, report: SignalReport, prompt: str, user_id: int, parent: ParentRun | None = None) -> dict:
+    data = {
         "run_source": "signal_report",
         "signal_report_id": str(report.id),
         "mode": "background",
         "pending_user_message": prompt,
         **runtime_selection(team_id=report.team_id, user_id=user_id),
     }
+    if parent is not None:
+        # Tasks reads these keys to treat the run as one an agent started.
+        data[AGENT_PARENT_TASK_ID_STATE_KEY] = parent.task_id
+        data[AGENT_PARENT_RUN_ID_STATE_KEY] = parent.run_id
+    return data
 
 
 @frozen
@@ -483,9 +497,16 @@ class ReportTaskActionStartError(Exception):
 
 
 def start_report_task_action(
-    context: ReportTaskActionContext, report: SignalReport, action: ReportTaskAction, *, code_access_allowed: bool
+    context: ReportTaskActionContext,
+    report: SignalReport,
+    action: ReportTaskAction,
+    *,
+    code_access_allowed: bool,
+    parent: ParentRun | None = None,
 ) -> StartedReportTaskAction:
     """Create the report-linked discussion task and its first background run.
+
+    `parent` is the run whose sandbox asked for the action. None means a person asked.
 
     Raises `ReportTaskCapExceeded` when the report has spent its task allowance.
     """
@@ -494,7 +515,7 @@ def start_report_task_action(
         context.team.id,
         context.user.id,
         validated_data=task_create_data(report, prompt),
-        run_data=task_run_data(report=report, prompt=prompt, user_id=context.user.id),
+        run_data=task_run_data(report=report, prompt=prompt, user_id=context.user.id, parent=parent),
         code_access_allowed=code_access_allowed,
     )
     if result.error is not None or result.task is None:
