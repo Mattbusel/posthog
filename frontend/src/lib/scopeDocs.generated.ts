@@ -9,7 +9,7 @@ export type ScopeObjectDoc = {
     actions: ('read' | 'write')[]
     docsUrl?: string
     organizationWide?: true
-    // Only an admin-driven path grants it (PRIVILEGED_SCOPES in posthog/scopes.py).
+    // Only an admin-driven path grants it (PRIVILEGED_SCOPES in posthog/scopes/exposure.py).
     privileged?: true
     // A scope that writing this object also needs, and why.
     writeRequires?: { scope: string; reason: string }
@@ -49,6 +49,14 @@ export const SCOPE_DOCS: Readonly<Record<string, ScopeObjectDoc>> = {
         plural: 'accounts',
         description:
             'Customer analytics accounts, their custom properties, relationships, notes, notebooks, and event streams.',
+        group: 'Customers & support',
+        actions: ['read', 'write'],
+        docsUrl: 'https://posthog.com/docs/customer-analytics/start-here',
+    },
+    account_note: {
+        name: 'Account note',
+        plural: 'account notes',
+        description: 'Notes on Customer analytics accounts and their tags, without access to the rest of the account.',
         group: 'Customers & support',
         actions: ['read', 'write'],
         docsUrl: 'https://posthog.com/docs/customer-analytics/start-here',
