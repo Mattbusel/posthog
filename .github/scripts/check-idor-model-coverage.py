@@ -374,6 +374,7 @@ def get_scoped_models() -> tuple[dict[str, set[str]], set[str], set[str], set[st
         "LinkedIdentityProviderConfig",
         "IdJagIdentity",
         # --- User-scoped (cross-tenant by design) ---
+        "IdentityProviderEmailVerification",
         "NotificationViewed",
         "SCIMProvisionedUser",
         "SCIMRequestLog",
