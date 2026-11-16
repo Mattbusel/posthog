@@ -39,7 +39,6 @@ from products.tasks.backend.facade.sandbox import SandboxBase, get_sandbox_class
 
 logger = structlog.get_logger(__name__)
 
-REVAMPED_PY_NOTEBOOKS_FLAG = "revamped-py-notebooks"
 NOTEBOOK_SAVE_AS_WAREHOUSE_TABLE_FLAG = "notebook-save-as-warehouse-table"
 NOTEBOOKS_FRAME_STORE_FLAG = "notebooks-frame-store"
 NOTEBOOKS_FRAME_STORE_CH_WRITES_FLAG = "notebooks-frame-store-ch-writes"
@@ -122,10 +121,6 @@ def _flag_enabled_for(flag: str, user: User | None) -> bool:
     return bool(posthoganalytics.feature_enabled(flag, user.distinct_id, **kwargs))
 
 
-def is_sql_v2_enabled(user: User | None) -> bool:
-    return _flag_enabled_for(REVAMPED_PY_NOTEBOOKS_FLAG, user)
-
-
 def is_notebook_warehouse_table_save_enabled(user: User | None) -> bool:
     return _flag_enabled_for(NOTEBOOK_SAVE_AS_WAREHOUSE_TABLE_FLAG, user)
 
@@ -133,7 +128,7 @@ def is_notebook_warehouse_table_save_enabled(user: User | None) -> bool:
 def is_frame_store_enabled(user: User | None) -> bool:
     """Whether this user's whole-frame materializations may use the object-storage path.
 
-    Narrower than `is_sql_v2_enabled`: it gates only the transport, so a user without it
+    This gates only the transport, so a user without it
     still runs SQLV2 nodes, just over the inline transport and its 50k row clamp. Both this
     and the deployment's `frame_store.is_enabled()` must hold, so the flag can widen the
     rollout no further than the environment is provisioned for.
