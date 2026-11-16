@@ -281,7 +281,7 @@ Available features:
 
 > **Note:** Hyphens and underscores are treated as equivalent in feature names (e.g., `error-tracking` and `error_tracking` both work).
 
-To view which tools are available per feature, see our [documentation](https://posthog.com/docs/model-context-protocol) or check `schema/tool-definitions-all.json`.
+To view which tools are available per feature, see our [documentation](https://posthog.com/docs/model-context-protocol) or check `schema/tool-definitions.json` (hand-written tools) and `schema/generated-tool-definitions.json` (tools generated from YAML).
 
 ### Learning and skills in cli mode
 
@@ -374,6 +374,27 @@ An explicit value always wins over the client auto-detection; any other value is
 The cli-mode command surface is documented publicly on [posthog.com/docs/model-context-protocol/tools](https://posthog.com/docs/model-context-protocol/tools), which embeds `schema/exec-command-reference.md` at build time.
 That fragment is generated from the templates in `src/templates/sections/` by `scripts/generate-exec-docs.ts` (part of `hogli build:openapi`); edit the templates, not the fragment.
 
+### Business knowledge for your own agent
+
+Your own agent, with no PostHog user behind it, can search a project's business knowledge.
+Authenticate with a project secret API key (`phs_...`) that has the `business_knowledge:read` scope, and name the project in the URL:
+
+```json
+{
+  "mcpServers": {
+    "business-knowledge": {
+      "url": "https://mcp.posthog.com/mcp?project_id=<project ID>",
+      "headers": { "Authorization": "Bearer <your project secret API key>" }
+    }
+  }
+}
+```
+
+- `project_id` is required, because the key has no user to take a default project from. The `x-posthog-project-id` header also works.
+- The connection lists six read-only tools: document search, document window, library list, library get, repository search, and repository file read. It reaches no other tool, whatever `features` or `tools` say.
+- These connections default to tools mode. Send `mode=cli` for the single `exec` tool.
+- Keep the key on your server. Anyone who has it can read all the business knowledge in the project.
+
 ### Consumer attribution
 
 Wrapping apps and AI-tool plugins that install or proxy the PostHog MCP can self-identify so usage can be attributed to the install path (e.g. plugin-installed vs. manually-pasted URL). The wrapped MCP client (Claude Code, Cursor, …) is already captured separately via the MCP `clientInfo` handshake — this signal is only for the wrapping context.
@@ -456,7 +477,7 @@ Changes in the examples repo will be reflected on the next request.
 
 - `src/` - The MCP server: Hono app (`src/hono/`), tool handlers (`src/tools/`), prompt templates (`src/templates/`)
 - `definitions/` - Hand-authored YAML tool definitions (per-product YAML lives at `products/<product>/mcp/` in the monorepo)
-- `schema/` - Generated schema files, including `tool-definitions-all.json` (the full tool catalog)
+- `schema/` - Tool definitions: hand-written `tool-definitions.json`, plus generated files such as `generated-tool-definitions.json`
 
 ### Development Commands
 
@@ -466,6 +487,7 @@ Changes in the examples repo will be reflected on the next request.
 - `pnpm run lint:fix` - Apply safe lint fixes without suggestion fixes
 - `pnpm run format` - Format code with Oxfmt only
 - `pnpm run fix` - Apply safe lint fixes, always format code, and report failures from either tool
+- `pnpm run build:cli:catalog` - Write the API tool catalog that the PostHog app serves to hog at `/api/cli/catalog.json`. The image build runs it, and so does `bin/start-backend` in the background, so local dev serves the catalog of your checkout
 
 ### Adding New Tools
 

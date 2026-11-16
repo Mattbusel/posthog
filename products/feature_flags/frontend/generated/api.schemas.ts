@@ -1733,6 +1733,7 @@ export interface CohortConditionTypeFlagsApi {
  * * `static` - Static
  * * `person_properties` - Person properties
  * * `daily` - Daily
+ * * `off` - Off
  * * `building` - Building
  * * `rebuilding` - Rebuilding
  * * `ready` - Ready
@@ -1744,6 +1745,7 @@ export const CohortRealtimeStateEnumApi = {
     Static: 'static',
     PersonProperties: 'person_properties',
     Daily: 'daily',
+    Off: 'off',
     Building: 'building',
     Rebuilding: 'rebuilding',
     Ready: 'ready',
@@ -1783,12 +1785,25 @@ export interface CohortHistoryBuildApi {
     updated_at: string | null
 }
 
+/**
+ * * `history_over_limit` - History over limit
+ * * `too_large_to_build` - Too large to build
+ */
+export type CohortRealtimeUnavailableReasonEnumApi =
+    (typeof CohortRealtimeUnavailableReasonEnumApi)[keyof typeof CohortRealtimeUnavailableReasonEnumApi]
+
+export const CohortRealtimeUnavailableReasonEnumApi = {
+    HistoryOverLimit: 'history_over_limit',
+    TooLargeToBuild: 'too_large_to_build',
+} as const
+
 export interface CohortRealtimeReadinessApi {
-    /** Whether feature flags can target this cohort now. `ready`: they can, and they see membership changes within about a minute. `building` / `rebuilding`: PostHog is preparing the cohort from past events, and flags cannot target it yet. `needs_attention`: the cohort qualifies but nothing is preparing it. `daily`: its criteria are not supported in realtime, so its membership only comes from the once-a-day calculation. `person_properties`: it matches on person properties, which flags read directly, so they can always target it. `static`: it is a fixed list of people.
+    /** Whether feature flags can target this cohort now. `ready`: they can, and they see membership changes within about a minute. `building` / `rebuilding`: PostHog is preparing the cohort from past events, and flags cannot target it yet. `needs_attention`: the cohort qualifies but nothing is preparing it. `off`: the cohort qualifies and realtime is off for it, so feature flags cannot target it until it is turned on. `daily`: its criteria are not supported in realtime, so its membership only comes from the once-a-day calculation. `person_properties`: it matches on person properties, which flags read directly, so they can always target it. `static`: it is a fixed list of people.
      *
      * * `static` - Static
      * * `person_properties` - Person properties
      * * `daily` - Daily
+     * * `off` - Off
      * * `building` - Building
      * * `rebuilding` - Rebuilding
      * * `ready` - Ready
@@ -1801,6 +1816,16 @@ export interface CohortRealtimeReadinessApi {
     ready_at: string | null
     /** The build preparing the cohort. Null unless the state is `building` or `rebuilding`. */
     build: CohortHistoryBuildApi | null
+    /** Why feature flags can't target the cohort. `history_over_limit`, on a `daily` cohort: its criteria look back further than `history_limit_days`. `too_large_to_build`, on a `needs_attention` cohort: the events in its criteria happen too often for PostHog to prepare it automatically. Null in every other case, including a `daily` cohort that other criteria keep off realtime.
+     *
+     * * `history_over_limit` - History over limit
+     * * `too_large_to_build` - Too large to build */
+    reason: CohortRealtimeUnavailableReasonEnumApi | null
+    /**
+     * The most days realtime cohort criteria can look back. Null unless the reason is `history_over_limit`.
+     * @nullable
+     */
+    history_limit_days: number | null
 }
 
 export type SearchMatchTypeEnumApi = (typeof SearchMatchTypeEnumApi)[keyof typeof SearchMatchTypeEnumApi]
@@ -1863,6 +1888,8 @@ export interface CohortApi {
     readonly condition_type: CohortConditionTypeFlagsApi | null
     /** Whether feature flags can target this cohort, and the progress of the build that gets it there. Null outside the realtime cohort flag targeting rollout, on projects the realtime pipeline does not cover, and for cohorts that match on neither events nor person properties, which nothing in the flag API decides on. */
     readonly realtime: CohortRealtimeReadinessApi | null
+    /** Whether realtime is on for this cohort, so PostHog keeps its membership current for feature flags and workflows. Send true when you create a cohort to turn realtime on for it. It stays false when the project has no realtime cohorts or the cohort's criteria can't be realtime. For an existing cohort, use the `realtime` endpoint to turn it on or off. */
+    realtime_enabled?: boolean
     readonly experiment_set: readonly number[]
     /** How this row matched the `search` query parameter: `exact` (the term is a case-insensitive substring of a searched field) or `similar` (a fuzzy trigram match, returned only when no exact match exists). Null when the list is not filtered by `search`. */
     readonly search_match_type: SearchMatchTypeEnumApi | null
@@ -2070,6 +2097,7 @@ export interface FeatureFlagVersionResponseApi {
     readonly filters: FeatureFlagVersionResponseApiFilters
     active?: boolean
     deleted?: boolean
+    archived?: boolean
     /**
      * @minimum -2147483648
      * @maximum 2147483647
@@ -2112,6 +2140,31 @@ export interface FeatureFlagVersionResponseApi {
      * @nullable
      */
     readonly modified_by: number | null
+}
+
+export interface FeatureFlagRestoreVersionRequestApi {
+    /** When true, the edit lowers the flag's exposure, and the request sends no `rollback_reason`, the flag is not saved and the response is a 409 with the code `rollback_reason_required`. Send the edit again without this field to save it, with or without a `rollback_reason`. Ignored for an edit that needs approval and for a config version 2 flag. */
+    ask_rollback_reason?: boolean
+    /** Why this edit lowers the flag's exposure, for example a rollback after errors. Stored on the activity log entry of the edit. Not stored for an edit that needs approval or for a config version 2 flag.
+     *
+     * * `errors` - Errors or bugs
+     * * `metrics` - Metrics got worse
+     * * `planned` - It was planned
+     * * `wrong_configuration` - Wrong configuration
+     * * `other` - Other */
+    rollback_reason?: RollbackReasonEnumApi | null
+    /**
+     * A free-text note for `rollback_reason`. Requires `rollback_reason`.
+     * @maxLength 1000
+     * @nullable
+     */
+    rollback_reason_note?: string | null
+    /**
+     * The flag's current `version`, from your most recent read of it. This is not the version to restore, which goes in the URL. The restore is refused with 409 if anyone changed the flag after this version. A flag written before versioning reads as `null`; send that back unchanged and it is read as 0.
+     * @minimum 0
+     * @nullable
+     */
+    version: number | null
 }
 
 /**
@@ -2706,6 +2759,10 @@ export type FeatureFlagsListParams = {
      */
     has_evaluation_contexts?: FeatureFlagsListHasEvaluationContexts
     /**
+     * Comma-separated flag IDs, at most 200. Returns exactly those flags, including archived flags and flags that surveys or product tours own. Other filters are ignored, and soft-deleted flags are left out unless deleted=true.
+     */
+    ids?: string
+    /**
      * Filter by exact feature flag key match. Case insensitive.
      */
     key?: string
@@ -2868,4 +2925,8 @@ export type ScheduledChangesListParams = {
      * Filter by the ID of a specific feature flag.
      */
     record_id?: string
+    /**
+     * Comma-separated feature flag IDs. Returns the schedules of any of them, at most 200 IDs.
+     */
+    record_ids?: string
 }
