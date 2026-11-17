@@ -28,6 +28,7 @@ from . import (
     team_access_cache_tasks,
     transactional_email,
     usage_report,
+    workos_radar,
 )
 
 __all__ = [
@@ -58,4 +59,5 @@ __all__ = [
     "team_access_cache_tasks",
     "transactional_email",
     "usage_report",
+    "workos_radar",
 ]
