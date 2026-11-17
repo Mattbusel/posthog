@@ -187,7 +187,6 @@ pub async fn export_metrics_http(
         .label_cardinality
         .apply(token, &mut rows, FingerprintKind::Otlp);
     let (labelled, records_bytes) = service.series_label_gate.decide_metered(token, &mut rows);
-    // The dropped-labels marker is ours, so it is not billed.
     let records_bytes = records_bytes.saturating_sub(marked_rows * LABEL_BYTES);
     service.label_cardinality.note_new_series(
         token,

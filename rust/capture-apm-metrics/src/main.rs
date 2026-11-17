@@ -151,9 +151,6 @@ async fn start_series_label_gate(
     (gate, Some(client))
 }
 
-/// Build the label cardinality detector. With Redis it shares drop rules
-/// through the pull connection of the series label gate, because rule traffic
-/// is a few small writes and one small read per pull interval.
 fn start_label_cardinality(
     config: &Config,
     client: Option<Arc<dyn Client>>,

@@ -24,34 +24,22 @@ use crate::histogram_assembly::fingerprint_with_bounds;
 use crate::series_label_gate::Clock;
 
 const REDIS_KEY_PREFIX: &str = "capture-logs:metric-label-drop-rules";
-/// Hour buckets by expiry expire on their own, so no prune command is needed.
 const REDIS_BUCKET_SECS: i64 = 3600;
 const PULL_PAGE_SIZE: usize = 10_000;
 const WRITER_CHANNEL_CAPACITY: usize = 10_000;
 const PRUNE_INTERVAL: Duration = Duration::from_secs(300);
 const EVALUATE_INTERVAL_SECS: i64 = 10;
 
-/// The row builders add these per sample after the fingerprint, so they are
-/// never flagged and the recomputed fingerprint leaves them out too.
-const ORIGINAL_TIMESTAMP_ATTRIBUTES: [&str; 2] =
-    [ORIGINAL_TIMESTAMP_ATTRIBUTE, "$originalTimestamp"];
-/// The fingerprint leaves this marker out, so a combined series keeps the
-/// fingerprint of a series that never had the dropped key.
 pub const DROPPED_LABELS_ATTRIBUTE: &str = "posthog.dropped_labels";
 const HISTOGRAM_SUFFIXES: [&str; 3] = ["_bucket", "_count", "_sum"];
-/// Both row builders copy this resource attribute into `service_name`, which
-/// the fingerprint hashes on its own, so a rule can not drop it.
 const SERVICE_NAME_RESOURCE: &str = "service.name";
 const MAX_PENDING_PUSHES: usize = 10_000;
-/// Rules from every pod land on every pod, so the rule map has its own cap.
-/// A rule is a few tens of bytes.
 const MAX_RULES: usize = 200_000;
 const HISTOGRAM_TYPE: &str = "histogram";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Off,
-    /// Detect and share rules, but leave every row unchanged.
     Shadow,
     Enforce,
 }
@@ -79,8 +67,6 @@ impl Mode {
     }
 }
 
-/// A recomputed fingerprint must use the recipe of the request path that built
-/// the row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FingerprintKind {
     Otlp,
@@ -109,20 +95,15 @@ pub struct Settings {
     pub protected_keys: HashSet<String>,
 }
 
-/// Rules and candidates hold hashes, not names, so the size of a sender's
-/// metric names and label keys never decides how much memory they keep.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub metric_key: u64,
     pub scope: Scope,
     pub key_hash: u64,
-    /// Not in the Redis member, so every pod that extends a rule updates the
-    /// score of one member instead of adding another.
     #[serde(skip)]
     pub expires_at: i64,
 }
 
-/// HyperLogLog with 256 one-byte registers: about 6.5% error, 256 bytes.
 #[derive(Clone)]
 struct Sketch {
     registers: [u8; SKETCH_REGISTERS],
@@ -169,8 +150,6 @@ impl Sketch {
 struct Candidate {
     token: Arc<str>,
     window: i64,
-    /// Last window in which the family passed stage 1. A candidate that stops
-    /// qualifying gives up its slot, unless it has a rule.
     qualified_window: i64,
     series: Sketch,
     keys: HashMap<(Scope, u64), Sketch>,
@@ -206,7 +185,6 @@ struct NewSeriesCount {
 
 struct RowHashes {
     series: u64,
-    /// Scope, key hash and value hash of each label that can be dropped.
     values: Vec<(Scope, u64, u64)>,
 }
 
@@ -217,7 +195,6 @@ pub struct LabelCardinality {
     tracked_count: AtomicUsize,
     tracked_per_token: DashMap<u64, usize>,
     candidates: DashMap<u64, Mutex<Candidate>>,
-    /// Exact candidate count. `DashMap::len` walks every shard.
     candidate_count: AtomicUsize,
     rules: DashMap<u64, Vec<Rule>>,
     rule_count: AtomicUsize,
@@ -245,10 +222,7 @@ impl LabelCardinality {
                 [(Scope::Attribute, hash), (Scope::Resource, hash)]
             })
             .collect();
-        for key in ORIGINAL_TIMESTAMP_ATTRIBUTES
-            .iter()
-            .chain([&DROPPED_LABELS_ATTRIBUTE])
-        {
+        for key in [ORIGINAL_TIMESTAMP_ATTRIBUTE, DROPPED_LABELS_ATTRIBUTE] {
             protected.insert((Scope::Attribute, key_hash(key)));
         }
         protected.insert((Scope::Resource, key_hash(SERVICE_NAME_RESOURCE)));
@@ -275,8 +249,6 @@ impl LabelCardinality {
         now.div_euclid(self.settings.window.as_secs().max(1) as i64)
     }
 
-    /// `new_rows` are the indices of the rows the series label gate kept
-    /// labelled, which is one row per new series.
     pub fn note_new_series(
         &self,
         token: &str,
@@ -358,7 +330,6 @@ impl LabelCardinality {
         true
     }
 
-    /// Returns whether the metric has a candidate afterwards.
     fn add_candidate(&self, metric_key: u64, token: &Arc<str>, window: i64) -> bool {
         if self.candidates.contains_key(&metric_key) {
             return true;
@@ -377,8 +348,6 @@ impl LabelCardinality {
         true
     }
 
-    /// Call it before [`Self::apply`], so the sketches see the labels that a
-    /// rule drops.
     pub fn observe(&self, token: &str, rows: &[KafkaMetricRow], kind: FingerprintKind) {
         if self.settings.mode == Mode::Off || (self.candidates.is_empty() && self.rules.is_empty())
         {
@@ -394,20 +363,15 @@ impl LabelCardinality {
             let metric_key = *keys_by_name
                 .entry(row.metric_name.as_str())
                 .or_insert_with(|| metric_key(token, family(&row.metric_name, kind)));
-            if self.candidates.contains_key(&metric_key) {
+            if self.candidates.contains_key(&metric_key)
+                || (self.rules.contains_key(&metric_key)
+                    && self.add_candidate(metric_key, &token_label, window))
+            {
                 groups.entry(metric_key).or_default().push(index);
-            } else if self.rules.contains_key(&metric_key) {
-                // A rule hides the series growth from the gate, so the family
-                // would never pass stage 1 again. The rule keeps it tracked.
-                if self.add_candidate(metric_key, &token_label, window) {
-                    groups.entry(metric_key).or_default().push(index);
-                }
             }
         }
 
         for (metric_key, indices) in groups {
-            // Hash outside the lock, so concurrent requests for one metric
-            // wait only for the register updates.
             let hashes: Vec<RowHashes> = indices
                 .iter()
                 .map(|&index| self.row_hashes(&rows[index], kind))
@@ -430,9 +394,6 @@ impl LabelCardinality {
         }
     }
 
-    /// On remote-write the series hash leaves out `le` on `_bucket` rows and
-    /// `quantile`, so the component series of one classic histogram or summary
-    /// count as one series. On any other row they are ordinary labels.
     fn row_hashes(&self, row: &KafkaMetricRow, kind: FingerprintKind) -> RowHashes {
         let component_label = |key: &str| {
             kind == FingerprintKind::RemoteWrite
@@ -450,14 +411,12 @@ impl LabelCardinality {
         ] {
             for (key, value) in map {
                 if scope == Scope::Attribute
-                    && (ORIGINAL_TIMESTAMP_ATTRIBUTES.contains(&key.as_str())
-                        || component_label(key))
+                    && (key == ORIGINAL_TIMESTAMP_ATTRIBUTE || component_label(key))
                 {
                     continue;
                 }
                 let key = key_hash(key);
                 let hash = value_hash(value);
-                // Label order is not stable, so the pairs combine with a sum.
                 series = series.wrapping_add(pair_hash(scope, key, hash));
                 if !self.protected.contains(&(scope, key)) {
                     values.push((scope, key, hash));
@@ -489,10 +448,6 @@ impl LabelCardinality {
         }
     }
 
-    /// An active rule is extended at half the limit, so a key near the limit
-    /// does not switch its rule on and off.
-    /// `group` gives the names for the log line. They are read from this
-    /// request and never kept.
     fn evaluate(
         &self,
         metric_key: u64,
@@ -575,8 +530,6 @@ impl LabelCardinality {
                 return;
             }
         }
-        // Reserve before the entry exists, so a rejected rule leaves no empty
-        // entry behind.
         if self.rule_count.fetch_add(1, Ordering::AcqRel) >= MAX_RULES {
             self.rule_count.fetch_sub(1, Ordering::AcqRel);
             counter!("capture_metrics_label_cardinality_rules_full").increment(1);
@@ -587,16 +540,12 @@ impl LabelCardinality {
             .iter()
             .any(|r| r.scope == rule.scope && r.key_hash == rule.key_hash)
         {
-            // Another request added the same rule between the two lookups.
             self.rule_count.fetch_sub(1, Ordering::AcqRel);
             return;
         }
         rules.push(rule);
     }
 
-    /// Call it after [`Self::observe`] and before the series label gate.
-    /// Returns the number of marked rows, so the caller can take the marker
-    /// off the billed bytes.
     pub fn apply(&self, token: &str, rows: &mut [KafkaMetricRow], kind: FingerprintKind) -> u64 {
         if self.settings.mode == Mode::Off || self.rules.is_empty() {
             return 0;
@@ -644,7 +593,6 @@ impl LabelCardinality {
                     .or_insert_with(|| series_fingerprint(row, kind));
                 dropped.sort_unstable();
                 dropped.dedup();
-                // Attribute values are JSON-encoded strings.
                 let marker = serde_json::Value::String(dropped.join(",")).to_string();
                 row.attributes
                     .insert(DROPPED_LABELS_ATTRIBUTE.to_string(), marker);
@@ -671,8 +619,6 @@ impl LabelCardinality {
             .map(|rules| {
                 rules
                     .iter()
-                    // A rule from Redis can name a key that this pod now
-                    // protects.
                     .filter(|rule| {
                         rule.expires_at > now
                             && !self.protected.contains(&(rule.scope, rule.key_hash))
@@ -750,7 +696,6 @@ impl LabelCardinality {
                     .await
                 {
                     Ok(page) => page,
-                    // An hour with no rules has no key.
                     Err(CustomRedisError::NotFound) => break,
                     Err(e) => return Err(e),
                 };
@@ -758,8 +703,6 @@ impl LabelCardinality {
                 for member in page {
                     match serde_json::from_str::<Rule>(&member) {
                         Ok(mut rule) => {
-                            // The score is at most the end of its bucket, so
-                            // the rule lasts at most one bucket longer here.
                             rule.expires_at = bucket_end;
                             self.merge_rule(rule);
                             merged += 1;
@@ -776,8 +719,6 @@ impl LabelCardinality {
         Ok(merged)
     }
 
-    /// A failed push is kept and sent again with the next push or pull, so a
-    /// short Redis outage does not hide a rule until its next extension.
     pub fn spawn_redis_sync(
         self: &Arc<Self>,
         client: Arc<dyn Client>,
@@ -852,14 +793,10 @@ async fn push_rules(
     }
 }
 
-/// The fingerprint a row gets when the request path builds it from its
-/// current labels. It must match the builders exactly, so that a row whose
-/// label a rule dropped joins the series of a row that never had the label.
+/// Must match the row builders, or a dropped label does not combine series.
 fn series_fingerprint(row: &KafkaMetricRow, kind: FingerprintKind) -> i64 {
     let mut attributes = row.attributes.clone();
-    for attribute in ORIGINAL_TIMESTAMP_ATTRIBUTES {
-        attributes.remove(attribute);
-    }
+    attributes.remove(ORIGINAL_TIMESTAMP_ATTRIBUTE);
     attributes.remove(DROPPED_LABELS_ATTRIBUTE);
     let fingerprint = compute_series_fingerprint(
         &row.metric_name,
@@ -868,8 +805,6 @@ fn series_fingerprint(row: &KafkaMetricRow, kind: FingerprintKind) -> i64 {
         &row.resource_attributes,
         &attributes,
     );
-    // Remote-write gives the `histogram` type only to the native rows that
-    // `fold_classic_histograms` builds, and those hash their bound set.
     match kind {
         FingerprintKind::RemoteWrite if row.metric_type == HISTOGRAM_TYPE => {
             fingerprint_with_bounds(fingerprint, &row.histogram_bounds)
@@ -878,9 +813,6 @@ fn series_fingerprint(row: &KafkaMetricRow, kind: FingerprintKind) -> i64 {
     }
 }
 
-/// The components of a remote-write classic histogram share one rule, or they
-/// disagree on their labels and stop folding into one native histogram. OTLP
-/// histograms are native, so an OTLP name is its own family.
 fn family(metric_name: &str, kind: FingerprintKind) -> &str {
     if kind == FingerprintKind::Otlp {
         return metric_name;
@@ -895,7 +827,6 @@ fn family(metric_name: &str, kind: FingerprintKind) -> &str {
     metric_name
 }
 
-/// Families of two projects must not share state, so the token is hashed in.
 fn metric_key(token: &str, family: &str) -> u64 {
     let mut hasher = SipHasher13::new();
     hasher.write(&(token.len() as u64).to_le_bytes());
@@ -918,8 +849,6 @@ fn pair_hash(scope: Scope, key_hash: u64, value_hash: u64) -> u64 {
     hasher.finish()
 }
 
-/// Separate keys from `value_hash`, so a key and a value with equal text get
-/// different hashes.
 fn key_hash(key: &str) -> u64 {
     let mut hasher = SipHasher13::new_with_keys(0, 1);
     hasher.write(key.as_bytes());
@@ -938,7 +867,6 @@ fn key_name<'a>(group: &[&'a KafkaMetricRow], scope: Scope, hash: u64) -> Option
     })
 }
 
-/// Log lines carry at most this much of a sender's name.
 fn truncated(name: &str) -> &str {
     const MAX_LOGGED_CHARS: usize = 200;
     match name.char_indices().nth(MAX_LOGGED_CHARS) {
@@ -1341,7 +1269,6 @@ mod tests {
     fn le_on_a_gauge_counts_toward_its_series() {
         let (detector, _rx, _) = detector(Mode::Enforce);
         let timestamp = Utc::now().timestamp_millis();
-        // `user_id` has 1000 values over 4000 series, a quarter of them.
         let series: Vec<TimeSeries> = (0..4000)
             .map(|i| TimeSeries {
                 labels: vec![

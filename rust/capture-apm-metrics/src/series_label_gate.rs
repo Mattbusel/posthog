@@ -146,8 +146,6 @@ pub struct LabelledSeries {
 }
 
 impl LabelledSeries {
-    /// Indices of the rows that kept their labels: one row for each series
-    /// that is new to the gate in this window.
     pub fn new_series_rows(&self) -> &[usize] {
         &self.rows
     }

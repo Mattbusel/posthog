@@ -69,8 +69,6 @@ pub struct Config {
     )]
     pub metrics_series_cache_max_entries_per_token: usize,
 
-    /// `off`, `shadow` or `enforce`. Shadow detects high cardinality labels and
-    /// shares the drop rules, but changes no row.
     #[envconfig(from = "METRICS_LABEL_CARDINALITY_MODE", default = "shadow")]
     pub metrics_label_cardinality_mode: Mode,
 
@@ -92,8 +90,6 @@ pub struct Config {
     #[envconfig(from = "METRICS_LABEL_CARDINALITY_MAX_KEYS_PER_METRIC", default = "32")]
     pub metrics_label_cardinality_max_keys_per_metric: usize,
 
-    /// Caps on the metric families one pod counts new series for. Ingestion
-    /// input drives this map, like the series cache.
     #[envconfig(
         from = "METRICS_LABEL_CARDINALITY_MAX_TRACKED_METRICS",
         default = "500000"
