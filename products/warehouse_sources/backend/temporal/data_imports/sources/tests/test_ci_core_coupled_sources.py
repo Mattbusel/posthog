@@ -1,27 +1,29 @@
-import re
 import ast
+import sys
 import json
+import tempfile
+import subprocess
+from functools import cache
 from pathlib import Path
 
-# Guards the backend:contract-check isolation of warehouse_sources.
-# When only isolated-product internals change, turbo-discover.js skips the Django suite
-# (Core/CorePOE). That is sound only if every warehouse_sources source a Core/CorePOE file
-# depends on is also a contract-check `input` in the product's turbo.json — otherwise a
-# change to that source would skip the Core test that exercises it (a silent coverage hole).
+# Guards the isolation of warehouse_sources in CI's test selection.
+# When only an isolated product's unwatched files change, turbo-discover.js skips the Django suite
+# (Core/CorePOE). That is sound only if every warehouse_sources file a Core/CorePOE file depends on
+# is in the product's watched set, which `hoglint watched` derives from the tree. Otherwise a change
+# to that file would skip the Core test that exercises it (a silent coverage hole).
 #
 # The coupling is NOT direct: a direct runtime `import ...sources.<vendor>` from Core is a
 # `public-surface` finding that hoglint blocks. What remains is Core reaching source internals THROUGH the facade's lazy re-exports
 # (facade/source_management.py's _LAZY map, facade/sources.py's imports). This test resolves
-# every facade re-export a Core/CorePOE file actually consumes back to its source vendor and
-# fails if that vendor is missing from the turbo.json contract-check inputs.
+# every facade re-export a Core/CorePOE file actually consumes back to the module the facade names,
+# and fails if hoglint does not watch that module. It reads the facade with stdlib ast, so it checks
+# hoglint's answer by a second route rather than repeating it.
 #
 # Registry lookups resolve vendors dynamically, so this guard cannot enumerate their
-# dependencies. MSSQL stays in the contract inputs because data_warehouse's SQL migration
-# tests depend on its optional schema field. Other registry dependencies can be skipped on
-# PRs and narrowed merge-queue runs; the hourly full master run is their backstop.
-#
-# Generated configs are watched per module, because watching the package re-runs the Django
-# suite for every source. The second test holds that list to what the watched files refer to.
+# dependencies. The PostHog preset declares the ones core relies on as permanent interfaces, so
+# hoglint watches them: MSSQL, because data_warehouse's SQL migration tests depend on its optional
+# schema field. Other registry dependencies can be skipped on PRs and narrowed merge-queue runs; the
+# hourly full master run is their backstop.
 #
 # Deliberately uses stdlib ast over a path walk, NOT the repo's `grimp` dependency: grimp
 # does not descend products/warehouse_sources/backend/temporal/data_imports/ (an implicit namespace package — no
@@ -31,14 +33,12 @@ _FACADE_DIR = "products/warehouse_sources/backend/facade"
 _SOURCE_MGMT = "products.warehouse_sources.backend.facade.source_management"
 _SOURCES = "products.warehouse_sources.backend.facade.sources"
 _FACADE_MODULES = frozenset({_SOURCE_MGMT, _SOURCES})
+# The package the _LAZY targets of source_management.py are relative to.
+_DATA_IMPORTS = "products.warehouse_sources.backend.temporal.data_imports"
 
 # Roots collected by the Django Core/CorePOE segments. posthog/temporal is excluded — it is
 # the Temporal segment, which always runs alongside the product's own temporal job.
 _SCAN_ROOTS = ("posthog", "ee", "products/product_analytics")
-
-_INPUTS_PREFIX = "backend/temporal/data_imports/sources/"
-_GENERATED_CONFIGS_DIR = f"{_INPUTS_PREFIX}generated_configs/"
-_GENERATED_CONFIG_REFERENCE = re.compile(r"(?:[\w.]+\.)?sources\.generated_configs(?:\.(\w+))?(?:\.[\w.]+)?")
 
 
 def _repo_root() -> Path:
@@ -46,6 +46,27 @@ def _repo_root() -> Path:
         if (parent / ".depot" / "workflows" / "ci-backend.yml").exists():
             return parent
     raise RuntimeError("repo root not found")
+
+
+@cache
+def _watched_files() -> frozenset[str]:
+    """The files hoglint watches for warehouse_sources. One cold run takes about a minute, so it
+    runs once per process. A run that fails or is incomplete fails the test: an unknown set never
+    passes."""
+    root = _repo_root()
+    with tempfile.TemporaryDirectory() as work:
+        out = Path(work) / "watched.json"
+        run = subprocess.run(
+            [sys.executable, "-m", "hoglint", "watched", "--out", str(out)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert run.returncode == 0, f"hoglint watched exited {run.returncode}:\n{run.stderr[-4000:]}"
+        answer = json.loads(out.read_text())
+    assert answer["complete"], f"hoglint's watched answer is incomplete: {answer['problems']}"
+    return frozenset(answer["groups"]["warehouse_sources"]["watched"])
 
 
 def _is_type_checking(test: ast.expr) -> bool:
@@ -56,30 +77,13 @@ def _is_type_checking(test: ast.expr) -> bool:
     return False
 
 
-def _vendor_from_target(dotted: str) -> str | None:
-    """The source vendor a dotted module path re-exports, or None if it isn't a source module.
-    The vendor is the path segment right after the ``sources`` package, so this works on both
-    the relative _LAZY targets and the absolute imports in sources.py:
-
-    "sources.postgres.source" / "...data_imports.sources.stripe.constants" -> "postgres" / "stripe";
-    "sources" (the bare registry) / "cdc.adapters" / "...naming_convention" -> None.
-    """
-    parts = dotted.split(".")
-    if "sources" in parts:
-        i = parts.index("sources")
-        if i + 1 < len(parts):
-            return parts[i + 1]
-    return None
-
-
-def _facade_symbol_to_vendor(root: Path) -> dict[str, str]:
-    """Map each facade re-exported symbol to the source vendor it resolves to, across the two
-    facade modules that re-export source internals. Symbols whose target isn't a source module
-    (SourceRegistry, cdc adapters, NamingConvention) are omitted."""
+def _facade_symbol_to_module(root: Path) -> dict[str, str]:
+    """Map each name the two source-re-exporting facade modules hand out to the dotted module the
+    facade names for it."""
     mapping: dict[str, str] = {}
 
-    # source_management.py: `_LAZY = {"Symbol": "sources.<vendor>...."}` (relative to the
-    # data_imports package). Resolve each entry's target to its vendor.
+    # source_management.py: `_LAZY = {"Symbol": "sources.<vendor>...."}`, relative to the
+    # data_imports package.
     sm_tree = ast.parse((root / _FACADE_DIR / "source_management.py").read_text())
     for node in ast.walk(sm_tree):
         if not (
@@ -88,30 +92,31 @@ def _facade_symbol_to_vendor(root: Path) -> dict[str, str]:
             continue
         assert isinstance(node.value, ast.Dict)
         for key, value in zip(node.value.keys, node.value.values):
-            if not (
+            if (
                 isinstance(key, ast.Constant)
                 and isinstance(key.value, str)
                 and isinstance(value, ast.Constant)
                 and isinstance(value.value, str)
             ):
-                continue
-            vendor = _vendor_from_target(value.value)
-            if vendor:
-                mapping[key.value] = vendor
+                mapping[key.value] = f"{_DATA_IMPORTS}.{value.value}"
 
     # sources.py: `from products.warehouse_sources...sources.<vendor>... import (A, B, ...)`.
     src_tree = ast.parse((root / _FACADE_DIR / "sources.py").read_text())
     for node in ast.walk(src_tree):
-        if not isinstance(node, ast.ImportFrom) or not node.module:
-            continue
-        vendor = _vendor_from_target(node.module)
-        if not vendor:
-            continue
-        for alias in node.names:
-            mapping[alias.asname or alias.name] = vendor
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                mapping[alias.asname or alias.name] = node.module
 
-    assert mapping, "parsed no source re-exports from the warehouse_sources facade"
+    assert mapping, "parsed no re-exports from the warehouse_sources facade"
     return mapping
+
+
+def _module_path(root: Path, module: str) -> str:
+    base = module.replace(".", "/")
+    for candidate in (f"{base}.py", f"{base}/__init__.py"):
+        if (root / candidate).exists():
+            return candidate
+    raise AssertionError(f"the warehouse_sources facade names {module}, which is no file in the repo")
 
 
 def _core_consumed_facade_symbols(tree: ast.AST) -> set[str]:
@@ -136,33 +141,10 @@ def _core_consumed_facade_symbols(tree: ast.AST) -> set[str]:
     return found
 
 
-def _contract_check_inputs(root: Path) -> list[str] | None:
-    """The narrowed contract-check inputs, or None when turbo watches all of backend/."""
-    turbo_path = root / "products" / "warehouse_sources" / "turbo.json"
-    if not turbo_path.exists():
-        return None
-    turbo = json.loads(turbo_path.read_text())
-    return turbo.get("tasks", {}).get("backend:contract-check", {}).get("inputs") or None
-
-
-def _contract_covered_sources(root: Path) -> set[str] | None:
-    """Vendor dirs the contract-check inputs watch, or None when every vendor is covered."""
-    inputs = _contract_check_inputs(root)
-    if inputs is None:
-        return None
-    covered = {
-        rest.split("/")[0].removesuffix(".py")
-        for entry in inputs
-        if entry.startswith(_INPUTS_PREFIX) and (rest := entry[len(_INPUTS_PREFIX) :])
-    }
-    assert covered, "parsed no source-vendor inputs from turbo.json backend:contract-check"
-    return covered
-
-
-def test_core_facade_coupled_sources_are_covered_by_contract_check():
+def test_core_facade_coupled_sources_are_watched():
     root = _repo_root()
     excluded = root / "posthog" / "temporal"  # the Temporal segment; always runs
-    symbol_to_vendor = _facade_symbol_to_vendor(root)
+    symbol_to_module = _facade_symbol_to_module(root)
 
     consumed: set[str] = set()
     for rel in _SCAN_ROOTS:
@@ -181,59 +163,12 @@ def test_core_facade_coupled_sources_are_covered_by_contract_check():
                 continue
             consumed |= _core_consumed_facade_symbols(tree)
 
-    coupled_vendors = {symbol_to_vendor[s] for s in consumed if s in symbol_to_vendor}
-    covered = _contract_covered_sources(root)
-    if covered is None:
-        return
-    missing = coupled_vendors - covered
+    coupled = {_module_path(root, symbol_to_module[s]) for s in consumed if s in symbol_to_module}
+    assert coupled, "found no Core/CorePOE use of the warehouse_sources facade's re-exports"
+    missing = coupled - _watched_files()
     assert not missing, (
-        f"Core/CorePOE reaches warehouse sources {sorted(missing)} through the facade, but they are "
-        f"not covered by products/warehouse_sources/turbo.json backend:contract-check inputs "
-        f"{sorted(covered)}. A change to those sources would skip the Core tests that exercise them. "
-        f"Add backend/temporal/data_imports/sources/<vendor>/** to the contract-check inputs."
-    )
-
-
-def _is_watched(rel: Path, inputs: list[str]) -> bool:
-    included = any(rel.full_match(glob) for glob in inputs if not glob.startswith("!"))
-    excluded = any(rel.full_match(glob.removeprefix("!")) for glob in inputs if glob.startswith("!"))
-    return included and not excluded
-
-
-def _referenced_generated_configs(tree: ast.AST, config_modules: set[str]) -> set[str]:
-    dotted: set[str] = set()
-    for node in ast.walk(tree):
-        match node:
-            case ast.ImportFrom(module=str(module), names=names):
-                dotted |= {module, *(f"{module}.{alias.name}" for alias in names)}
-            case ast.Import(names=names):
-                dotted |= {alias.name for alias in names}
-            case ast.Constant(value=str(value)):
-                dotted.add(value)
-    # A name under the package that is not a config module comes from the hand-written __init__.
-    return {
-        match[1] if match[1] in config_modules else "__init__"
-        for path in dotted
-        if (match := _GENERATED_CONFIG_REFERENCE.fullmatch(path))
-    }
-
-
-def test_contract_check_watches_exactly_the_generated_configs_it_refers_to() -> None:
-    root = _repo_root()
-    product_dir = root / "products" / "warehouse_sources"
-    configs_dir = product_dir / _GENERATED_CONFIGS_DIR
-    inputs = _contract_check_inputs(root)
-    if inputs is None or f"{_GENERATED_CONFIGS_DIR}**" in inputs:
-        return
-
-    config_modules = {file.stem for file in configs_dir.glob("*.py")}
-    referenced: set[str] = set()
-    for file in (product_dir / "backend").rglob("*.py"):
-        if _is_watched(file.relative_to(product_dir), inputs) and not file.is_relative_to(configs_dir):
-            referenced |= _referenced_generated_configs(ast.parse(file.read_text(), filename=str(file)), config_modules)
-
-    watched = {Path(glob).stem for glob in inputs if glob.startswith(_GENERATED_CONFIGS_DIR)}
-    assert watched == referenced, (
-        "products/warehouse_sources/turbo.json backend:contract-check inputs must list exactly the "
-        "generated configs the watched files refer to"
+        f"Core/CorePOE reaches {sorted(missing)} through the warehouse_sources facade, but `hoglint watched` "
+        "does not watch them for warehouse_sources. A change to those files would skip the Core tests that "
+        "exercise them. hoglint's reached-watched rule should ask for every file on the path from a facade name "
+        "to its definition: run `hoglint watched` and report the gap to the owners of hoglint."
     )
