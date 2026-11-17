@@ -10,6 +10,10 @@ from products.error_tracking.backend.temporal import ACTIVITIES, LIFECYCLE_ACTIV
 from products.error_tracking.backend.temporal.built_in_filters_refresh.schedule import (
     create_error_tracking_built_in_filters_refresh_schedule,
 )
+from products.error_tracking.backend.temporal.platform_alert_evaluate import (
+    ERROR_TRACKING_ALERT_EVALUATION_ACTIVITIES,
+    ERROR_TRACKING_ALERT_EVALUATION_WORKFLOWS,
+)
 from products.error_tracking.backend.temporal.recommendations_refresh.types import RecommendationsRefreshInputs
 from products.error_tracking.backend.temporal.spike_event_cleanup.schedule import (
     create_error_tracking_spike_event_cleanup_schedule,
@@ -21,6 +25,8 @@ from products.error_tracking.backend.temporal.weekly_digest.schedule import crea
 
 __all__ = [
     "ACTIVITIES",
+    "ERROR_TRACKING_ALERT_EVALUATION_ACTIVITIES",
+    "ERROR_TRACKING_ALERT_EVALUATION_WORKFLOWS",
     "LIFECYCLE_ACTIVITIES",
     "LIFECYCLE_WORKFLOWS",
     "WORKFLOWS",
