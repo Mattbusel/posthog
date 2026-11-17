@@ -25,7 +25,6 @@ from posthog.schema import (
 from posthog.hogql.database.database import Database
 from posthog.hogql.direct_connection import INVALID_CONNECTION_ID_ERROR
 from posthog.hogql.flag_called_warnings import (
-    FLAG_CALLED_FROM_BOTH_TABLES_NOTICE,
     FLAG_CALLED_FROM_FLAG_EVALUATIONS_NOTICE,
     FLAG_CALLED_ON_EVENTS_AFTER_MOVE_WARNING,
     FLAG_CALLED_ON_EVENTS_NOTICE,
@@ -575,7 +574,7 @@ class TestMetadata(ClickhouseTestMixin, APIBaseTest):
                 "https://example.com/announcement",
                 mode=FlagEvaluationsMode.READ_FLAG_EVALUATIONS,
                 union_enabled=True,
-                expected_union_notices=1,
+                expected_notices=1,
             ),
             param(
                 "mixed_scan_read_from_both_tables_once_events_gets_no_flag_calls",
@@ -586,8 +585,7 @@ class TestMetadata(ClickhouseTestMixin, APIBaseTest):
                 "https://example.com/announcement",
                 mode=FlagEvaluationsMode.FLAG_EVALUATIONS_ONLY,
                 union_enabled=True,
-                expected_union_notices=1,
-                union_notice=FLAG_CALLED_FROM_BOTH_TABLES_NOTICE,
+                expected_notices=1,
             ),
             param(
                 "mixed_scan_the_union_declines",
