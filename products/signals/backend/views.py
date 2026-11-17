@@ -6986,7 +6986,8 @@ class SignalReportArtefactViewSet(
       report 404s.
 
     Writes are attributed: to the task named by the `X-PostHog-Task-Id` header (set automatically
-    for sandbox agents) when present, else to the requesting user.
+    for sandbox agents) when present, else to the requesting user. Suggested-reviewer changes
+    retain the authenticated user because that identity controls automatic task execution.
     """
 
     serializer_class = SignalReportArtefactSerializer
@@ -7213,7 +7214,8 @@ class SignalReportArtefactViewSet(
                 required=False,
                 description=(
                     "Task to attribute the artefact to (must belong to this project). Set automatically "
-                    "for sandbox agents; when absent the artefact is attributed to the requesting user."
+                    "for sandbox agents; when absent the artefact is attributed to the requesting user. "
+                    "Suggested-reviewer changes are always attributed to the authenticated user."
                 ),
             ),
         ],
@@ -7253,7 +7255,12 @@ class SignalReportArtefactViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
         content = request.validated_data["content"]
-        attribution = resolve_request_attribution(request, self.team.id)
+        # Auto-start uses reviewer attribution as its execution identity; a task header cannot authorize it.
+        attribution = resolve_request_attribution(
+            request,
+            self.team.id,
+            allow_task_attribution=artefact_type != SignalReportArtefact.ArtefactType.SUGGESTED_REVIEWERS,
+        )
         # The write boundary: parse the raw payload into the type's content model once; the
         # typed model is what flows into the append helpers.
         try:
