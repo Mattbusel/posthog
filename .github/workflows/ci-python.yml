@@ -759,7 +759,11 @@ jobs:
                   VENDORS: ${{ steps.select.outputs.vendors }}
               run: |
                   narrow=()
-                  targets=(products/warehouse_sources/backend/temporal/data_imports/sources/tests)
+                  targets=(
+                      products/warehouse_sources/backend/temporal/data_imports/sources/tests
+                      posthog/test/repo_invariants/test_warehouse_source_generated_files.py
+                      posthog/test/repo_invariants/test_warehouse_sources_core_coupling.py
+                  )
                   if [ "$MODE" = "vendors" ]; then
                       narrow=("--source-vendors=${VENDORS// /,}")
                   else
