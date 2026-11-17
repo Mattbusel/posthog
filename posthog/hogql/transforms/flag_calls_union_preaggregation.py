@@ -238,8 +238,8 @@ def _branches(scan: ast.SelectQuery) -> list[_Branch]:
         assert isinstance(query, ast.SelectQuery) and query.select_from is not None
         sample = query.select_from.sample
         if sample is not None and not sample.samples_all_rows():
-            # The union applies a SAMPLE ratio in each branch, and ClickHouse may pick different rows for a sample
-            # when the query that reads it changes.
+            # The union applies a SAMPLE ratio in each branch. ClickHouse may pick different rows for a sample when
+            # the query that reads it changes.
             raise _Decline("branch_samples")
         branches.append(
             _Branch(
@@ -393,8 +393,8 @@ class _ExpressionChecker(SyntaxVisitor):
 
 
 def _group_by_expression(key: ast.Expr, node: ast.SelectQuery) -> ast.Expr:
-    # ClickHouse reads an integer in GROUP BY as a position in the SELECT list, and the printer prints a boolean as 1
-    # or 0. A position past either end fails the query, which a generated key would let succeed.
+    # ClickHouse reads an integer in GROUP BY as a position in the SELECT list. The printer prints a boolean as 1 or 0.
+    # A position past either end fails the query, and a generated key would let it succeed.
     if isinstance(key, ast.Constant) and isinstance(key.value, int):
         if not 0 < key.value <= len(node.select):
             raise _Decline("group_by_position_out_of_range")
