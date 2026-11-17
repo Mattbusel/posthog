@@ -19,6 +19,7 @@ import type {
     AiObservabilityTracesClustersRetrieveParams,
     AiObservabilityTracesExportsContentRetrieveParams,
     AiObservabilityTracesFeedbackRetrieveParams,
+    AiObservabilityTracesListParams,
     AiObservabilityTracesNodesDatasetItemRetrieveParams,
     AiObservabilityTracesNodesParserTestCreateParams,
     AiObservabilityTracesNodesRawRetrieveParams,
@@ -183,6 +184,7 @@ import type {
     TraceExportCreateApi,
     TraceExportFileApi,
     TraceFeedbackApi,
+    TraceListApi,
     TraceNodeDatasetItemApi,
     TraceNodeDetailApi,
     TraceNodeParserTestApi,
@@ -684,6 +686,37 @@ export const aiObservabilityOfflineScorersHistoryList = async (
     options?: RequestInit
 ): Promise<OfflineHistoryPageApi> => {
     return apiMutator<OfflineHistoryPageApi>(getAiObservabilityOfflineScorersHistoryListUrl(projectId, id, params), {
+        ...options,
+        method: 'GET',
+    })
+}
+
+export const getAiObservabilityTracesListUrl = (projectId: string, params?: AiObservabilityTracesListParams) => {
+    const normalizedParams = new URLSearchParams()
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined) {
+            normalizedParams.append(key, value === null ? 'null' : String(value))
+        }
+    })
+
+    const stringifiedParams = normalizedParams.toString()
+
+    return stringifiedParams.length > 0
+        ? `/api/projects/${projectId}/ai_observability/traces/?${stringifiedParams}`
+        : `/api/projects/${projectId}/ai_observability/traces/`
+}
+
+/**
+ * The project's traces in a date range, newest first, a page at a time. The first page also carries how many
+ * traces the selection holds.
+ */
+export const aiObservabilityTracesList = async (
+    projectId: string,
+    params?: AiObservabilityTracesListParams,
+    options?: RequestInit
+): Promise<TraceListApi> => {
+    return apiMutator<TraceListApi>(getAiObservabilityTracesListUrl(projectId, params), {
         ...options,
         method: 'GET',
     })
