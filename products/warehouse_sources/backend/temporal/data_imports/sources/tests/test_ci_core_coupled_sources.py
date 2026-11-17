@@ -9,9 +9,8 @@ from pathlib import Path
 # depends on is also a contract-check `input` in the product's turbo.json — otherwise a
 # change to that source would skip the Core test that exercises it (a silent coverage hole).
 #
-# The coupling is NOT direct: dropping the backend.temporal.* tach interface means a direct
-# runtime `import ...sources.<vendor>` from Core is now an interface violation tach already
-# blocks. What remains is Core reaching source internals THROUGH the facade's lazy re-exports
+# The coupling is NOT direct: a direct runtime `import ...sources.<vendor>` from Core is a
+# `public-surface` finding that hoglint blocks. What remains is Core reaching source internals THROUGH the facade's lazy re-exports
 # (facade/source_management.py's _LAZY map, facade/sources.py's imports). This test resolves
 # every facade re-export a Core/CorePOE file actually consumes back to its source vendor and
 # fails if that vendor is missing from the turbo.json contract-check inputs.
