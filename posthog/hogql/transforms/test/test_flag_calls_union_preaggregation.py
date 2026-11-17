@@ -185,6 +185,11 @@ DECLINED_QUERIES: list[tuple[str, str, dict[str, Any]]] = [
     ("alias_chain_too_long_to_inline", f"{_doubling_aliases(12)}, count() FROM events {WHERE}", {}),
     ("not_aggregating", f"SELECT 1 FROM events {WHERE}", {}),
     # ClickHouse reads an aggregate of NULL as a plain value, which its Merge form cannot read.
+    (
+        "generated_name_taken_by_a_later_alias",
+        f"SELECT count(), count() AS n, 1 AS `count()` FROM events {WHERE}",
+        {},
+    ),
     ("count_of_null", f"SELECT count(NULL) FROM events {WHERE}", {}),
     ("sum_of_null", f"SELECT sum(NULL) FROM events {WHERE}", {}),
     ("uniq_if_of_null", f"SELECT uniqIf(NULL, 1) FROM events {WHERE}", {}),
@@ -404,6 +409,19 @@ class TestFlagCallsUnionPreaggregation(ClickhouseTestMixin, APIBaseTest):
 
         assert rewritten.results == plain.results
         assert any(row[0] for row in plain.results)
+
+    def test_filter_on_a_column_typed_differently_in_each_branch_returns_the_same_rows(self):
+        # `events` stores element names as an Enum8 array. The union converts them to strings before the filter runs.
+        query = (
+            "SELECT count() AS c FROM events "
+            f"WHERE event IN ('$autocapture', '$feature_flag_called') AND {WINDOW} "
+            "AND arraySort(elements_chain_elements)[1] = 'label'"
+        )
+        rewritten = self._run(query, ONLY, False)
+        with override_instance_config("HOGQL_FLAG_CALLS_UNION_PREAGGREGATION_ENABLED", False):
+            plain = self._run(query, ONLY, False)
+
+        assert rewritten.results == plain.results
 
     def test_read_outside_every_key_and_aggregate_fails_as_it_does_without_the_rewrite(self):
         query = f"SELECT distinct_id, count() FROM events {WHERE} GROUP BY event"

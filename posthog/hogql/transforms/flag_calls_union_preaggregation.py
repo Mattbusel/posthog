@@ -178,7 +178,7 @@ def _rewrite(node: ast.SelectQuery, scan: ast.SelectQuery, context: HogQLContext
     if not plan.aggregates and not plan.keys:
         raise _Decline("not_aggregating")
 
-    _check_branch_types(plan, shapes, branches, context)
+    _check_branch_types(node, plan, shapes, branches, context)
 
     branch_queries = [_branch_query(branch, node, plan) for branch in branches]
     set_type = ast.SelectSetQueryType(types=[cast(ast.SelectQueryType, query.type) for query in branch_queries])
@@ -449,7 +449,9 @@ def _state_function(node: ast.Call) -> str:
     return name
 
 
-def _check_branch_types(plan: _Plan, shapes: _Shapes, branches: list[_Branch], context: HogQLContext) -> None:
+def _check_branch_types(
+    node: ast.SelectQuery, plan: _Plan, shapes: _Shapes, branches: list[_Branch], context: HogQLContext
+) -> None:
     """A branch evaluates aggregate arguments and keys on its own table's columns, where the union evaluates them on its
     output, which ClickHouse converts to one type. Each union column those expressions read must have the
     same type in every branch, which also keeps the aggregation states of every branch the same type.
@@ -460,8 +462,9 @@ def _check_branch_types(plan: _Plan, shapes: _Shapes, branches: list[_Branch], c
     for argument in arguments:
         if argument.type is None or isinstance(argument.type.resolve_constant_type(context), ast.UnknownType):
             raise _Decline("aggregate_argument_type_unknown")
+    filters = [clause for clause in (node.where, node.prewhere) if clause is not None]
     columns: set[str] = set()
-    for expr in [*arguments, *plan.keys]:
+    for expr in [*arguments, *plan.keys, *filters]:
         columns |= shapes.reads(expr)
     for column in columns:
         types = [_column_type(branch, column, context) for branch in branches]
@@ -539,6 +542,7 @@ def _check_alias_references(clauses: list[ast.Expr]) -> None:
 
 def _rewrite_select(select: list[ast.Expr], rewriter: _OuterRewriter, context: HogQLContext) -> list[ast.Expr]:
     rewritten: list[ast.Expr] = []
+    explicit = {column.alias for column in select if isinstance(column, ast.Alias)}
     names: set[str] = set()
     printed = printed_aliases(select)
     for column in select:
@@ -558,7 +562,8 @@ def _rewrite_select(select: list[ast.Expr], rewriter: _OuterRewriter, context: H
             # ClickHouse names such a column after its SQL, which the rewrite changes.
             raise _Decline("unaliased_non_call_column")
         name = call_column_name(column, context)
-        if name in names:
+        if name in names or name in explicit:
+            # A later explicit alias of the same name would take this column's place, and the printer drops one of them.
             raise _Decline("repeated_column_name")
         names.add(name)
         rewritten.append(ast.Alias(alias=name, expr=expr, type=column.type))
