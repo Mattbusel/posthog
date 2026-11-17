@@ -1037,6 +1037,7 @@ Important side effects:
 - Enabling data-import-backed sources can trigger external data syncs
 
 Source filters (`config.hogql_filter`) share one rollout gate, `source_filters.writable_sources`: a source appears in `filter_catalogs` and accepts a saved filter only when its catalog is eligible and its rollout state lets the organization in.
+A source config with a saved filter also returns a read-only `filter_status`, built from its `SignalSourceFilterState` rows: `failing` while a fetch failed and no later fetch succeeded, with the error, the time it failed, and the earliest window still to read again.
 
 #### `SignalTeamConfigViewSet`
 
