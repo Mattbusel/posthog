@@ -7,8 +7,9 @@ The `repo-checks` job in `.depot/workflows/ci-backend.yml` therefore runs this d
 That job has no Postgres or ClickHouse, and the Core Django shards skip this directory.
 
 A test that compares a committed file with the code that generates it, or a registry with what is defined, also goes here.
-Such a test gives the same result every time for the same code, so a failure means master is broken.
-Outside this directory, Trunk quarantines a test that fails often in the merge queue, and the next pull request that breaks it merges anyway.
+Such a test gives the same result every time for the same code, so when it fails on every pull request in the merge queue, master is broken.
+The Django and product jobs pass their failures through a Trunk quarantine gate, and Trunk quarantines a test that fails often in the merge queue.
+The `repo-checks` job has no such gate, so a failure here always fails the pull request.
 
 Do not use database or ClickHouse fixtures here.
 Put other tests that inspect a bounded set of files next to the code they cover.

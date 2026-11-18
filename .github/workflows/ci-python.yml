@@ -748,7 +748,7 @@ jobs:
                       test_feature_flag_raw_reads.py
                       test_local_kafka_consumers.py
                       test_rbac_shadow_resolver_callers.py
-                      test_warehouse_sources_core_coupling.py
+                      test_warehouse_source_core_coupling.py
                   )
                   pytest -p no:cacheprovider -n auto "${full_invariants[@]/#/posthog/test/repo_invariants/}"
 
@@ -772,7 +772,7 @@ jobs:
 
             # These suites check that every vendor declares a valid, unique credential kind and an
             # auth type. A vendors run skips Backend CI, so they run in both modes. The check that
-            # the committed maps are current is a repo invariant in the step above.
+            # the committed maps are current runs in "Run repo invariants that scan the vendors".
             - name: Run credential map tests
               # The catalog's vendor filter would deselect credential cases in a shared session.
               if: steps.select.outputs.mode == 'vendors'

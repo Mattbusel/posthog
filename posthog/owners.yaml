@@ -103,9 +103,11 @@ rules:
     - match:
           - '/test/repo_invariants/test_integration_kinds_projection.py'
           - '/test/repo_invariants/test_warehouse_source_generated_files.py'
-          - '/test/repo_invariants/test_warehouse_sources_core_coupling.py'
+          - '/test/repo_invariants/test_warehouse_source_core_coupling.py'
       owners: team-warehouse-sources
-    - match: '/test/repo_invariants/test_message_preference_styles.py'
+    - match:
+          - '/test/repo_invariants/test_email_http_templates.py'
+          - '/test/repo_invariants/test_message_preference_styles.py'
       owners: team-workflows
     - match: '/test/repo_invariants/test_ai_observability_sample_traces.py'
       owners: team-ai-observability

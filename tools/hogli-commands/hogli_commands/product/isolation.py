@@ -502,7 +502,7 @@ def uncovered_permanent_modules(product_dir: Path, permanent_modules: frozenset[
 # ClickHouse DDL, so the DDL-qualification rule below doesn't apply. warehouse_sources: core's
 # HogQL direct-SQL adapters and system tables reach source internals through the facade's lazy
 # (PEP 562) re-exports; the exposed set is pinned by the product's own guard test
-# (test_warehouse_sources_core_coupling.py) and stays watched via the turbo-input rule above. Extending
+# (test_warehouse_source_core_coupling.py) and stays watched via the turbo-input rule above. Extending
 # this set requires a devex-reviewed change here — which is the point.
 _QUALIFICATION_EXEMPT_PRODUCTS: frozenset[str] = frozenset({"products.warehouse_sources"})
 
