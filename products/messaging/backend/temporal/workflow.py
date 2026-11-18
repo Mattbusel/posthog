@@ -32,6 +32,7 @@ STEP_RETRY_POLICY = RetryPolicy(
         "ImportCredentialsInvalid",
         "ImportTooLarge",
         "ImportStepBlocked",
+        "ImportAccessLost",
         "ImportRunClosed",
         "StaleImportAttempt",
         "UnknownImportStep",

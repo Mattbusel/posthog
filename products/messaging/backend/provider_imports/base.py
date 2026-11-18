@@ -41,6 +41,10 @@ class ImportStepBlocked(ImportStepError):
     """A step the run needs first didn't complete, so this one doesn't run. Another try finds the same result."""
 
 
+class ImportAccessLost(ImportStepError):
+    """The person who started the run can't make its changes anymore. Another try finds the same result."""
+
+
 class ImportProviderUnavailable(ImportStepError):
     """The provider did not respond or returned a server error. A later retry can succeed."""
 

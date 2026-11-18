@@ -24,6 +24,7 @@ from products.messaging.backend.models.provider_import_run import ProviderImport
 from products.messaging.backend.models.transactional_email_key import TransactionalEmailKey
 from products.messaging.backend.provider_imports import runs
 from products.messaging.backend.provider_imports.base import (
+    ImportAccessLost,
     ImportCredentialsInvalid,
     ImportProviderUnavailable,
     ImportTooLarge,
@@ -466,6 +467,20 @@ class TestPostmarkImport(BaseTest):
         assert "slow down" in run.progress["webhooks"]["last_error"]
         assert run.temporary_api_key is None
         assert [call.args[0] for call in self.sleep.call_args_list if call.args[0] >= 1] == [1.0, 2.0, 4.0, 8.0, 16.0]
+
+    @parameterized.expand([("deactivated", "is_active"), ("left_the_organization", "membership")])
+    def test_a_starter_who_lost_access_stops_the_step_before_it_writes(self, _name: str, lost: str) -> None:
+        run = runs.start_run(self.team.id, "postmark", ["suppressions"], PRODUCTION_TOKEN, self.user.id)
+        if lost == "is_active":
+            self.user.is_active = False
+            self.user.save()
+        else:
+            self.organization_membership.delete()
+
+        with self.assertRaises(ImportAccessLost):
+            runs.run_step(self.team.id, run.id, "suppressions", attempt=1)
+
+        assert not MessageSuppression.objects.for_team(self.team.id).exists()
 
     def test_a_revoked_token_during_a_step_stops_it_without_a_retry(self) -> None:
         self.fake.fail("/templates", 401, body={"ErrorCode": 10, "Message": "Bad token"})

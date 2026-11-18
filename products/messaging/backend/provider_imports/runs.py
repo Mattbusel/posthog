@@ -16,8 +16,9 @@ from django.utils import timezone
 
 from posthog.dataclasses import frozen
 from posthog.event_usage import report_team_action
-from posthog.models import Team
+from posthog.models import OrganizationMembership, Team, User
 
+from products.access_control.backend.facade.user_access_control import UserAccessControl
 from products.messaging.backend.models.provider_import_run import (
     ACTIVE_IMPORT_STATUSES,
     ImportStepStatus,
@@ -25,6 +26,7 @@ from products.messaging.backend.models.provider_import_run import (
     ProviderImportStatus,
 )
 from products.messaging.backend.provider_imports.base import (
+    ImportAccessLost,
     ImportContext,
     ImportItem,
     ImportPage,
@@ -137,6 +139,7 @@ def run_step(team_id: int, run_id: UUID, step: str, attempt: int) -> None:
     try:
         _check_required_steps(provider, run, step)
         for page in provider.run_step(step, context, claim.checkpoint):
+            _check_creator_access(team_id, run.created_by_id)
             _save_page(team_id, run_id, step, attempt, page)
             if page.checkpoint is None:
                 return
@@ -152,6 +155,23 @@ def run_step(team_id: int, run_id: UUID, step: str, attempt: int) -> None:
         except (StaleImportAttempt, ImportRunClosed):
             pass
         raise
+
+
+def _check_creator_access(team_id: int, created_by_id: int | None) -> None:
+    # The run writes in the background, so the person who started it may have lost access since.
+    user = User.objects.filter(id=created_by_id, is_active=True).first() if created_by_id else None
+    team = Team.objects.get(id=team_id)
+    # Access rules alone don't say whether the person is still in the organization.
+    if (
+        user is None
+        or not OrganizationMembership.objects.filter(organization_id=team.organization_id, user=user).exists()
+    ):
+        raise ImportAccessLost("The person who started this import can't use this project anymore, so it stopped.")
+    access = UserAccessControl(user=user, team=team)
+    if not access.has_project_access or not access.check_access_level_for_resource("hog_flow", "editor"):
+        raise ImportAccessLost(
+            "The person who started this import can't edit workflows in this project anymore, so it stopped."
+        )
 
 
 def _check_required_steps(provider: ImportProvider, run: ProviderImportRun, step: str) -> None:
