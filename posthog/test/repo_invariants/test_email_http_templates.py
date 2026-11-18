@@ -15,8 +15,11 @@ def test_all_http_templates_are_registered_in_workflows_map() -> None:
 
     missing: dict[str, str] = {}  # template_name -> first source path that uses it
     for source_path in sources:
+        text = source_path.read_text()
+        if "EmailMessage" not in text:
+            continue
         try:
-            tree = ast.parse(source_path.read_text())
+            tree = ast.parse(text)
         except SyntaxError:
             continue
         for node in ast.walk(tree):

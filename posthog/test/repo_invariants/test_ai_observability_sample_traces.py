@@ -1,10 +1,10 @@
 import json
 import hashlib
+from pathlib import Path
 
 from django.test import SimpleTestCase
 
-from products.ai_observability.backend.sample_traces import SAMPLE_TRACES_DIR
-
+SAMPLE_TRACES_DIR = Path(__file__).parents[3] / "products" / "ai_observability" / "fixtures" / "sample_traces"
 AGENTS_HINT = "Sample trace fixtures are generated; see products/ai_observability/fixtures/sample_traces/AGENTS.md."
 
 
