@@ -16,9 +16,8 @@ from django.utils import timezone
 
 from posthog.dataclasses import frozen
 from posthog.event_usage import report_team_action
-from posthog.models import OrganizationMembership, Team, User
+from posthog.models import Team
 
-from products.access_control.backend.facade.user_access_control import UserAccessControl
 from products.messaging.backend.models.provider_import_run import (
     ACTIVE_IMPORT_STATUSES,
     ImportStepStatus,
@@ -37,6 +36,7 @@ from products.messaging.backend.provider_imports.base import (
 )
 from products.messaging.backend.provider_imports.registry import get_provider
 from products.messaging.backend.temporal.client import RUN_EXECUTION_TIMEOUT, start_provider_import_workflow
+from products.workflows.backend.facade.api import can_edit_workflows
 
 logger = logging.getLogger(__name__)
 
@@ -159,16 +159,7 @@ def run_step(team_id: int, run_id: UUID, step: str, attempt: int) -> None:
 
 def _check_creator_access(team_id: int, created_by_id: int | None) -> None:
     # The run writes in the background, so the person who started it may have lost access since.
-    user = User.objects.filter(id=created_by_id, is_active=True).first() if created_by_id else None
-    team = Team.objects.get(id=team_id)
-    # Access rules alone don't say whether the person is still in the organization.
-    if (
-        user is None
-        or not OrganizationMembership.objects.filter(organization_id=team.organization_id, user=user).exists()
-    ):
-        raise ImportAccessLost("The person who started this import can't use this project anymore, so it stopped.")
-    access = UserAccessControl(user=user, team=team)
-    if not access.has_project_access or not access.check_access_level_for_resource("hog_flow", "editor"):
+    if not can_edit_workflows(team_id=team_id, user_id=created_by_id):
         raise ImportAccessLost(
             "The person who started this import can't edit workflows in this project anymore, so it stopped."
         )
