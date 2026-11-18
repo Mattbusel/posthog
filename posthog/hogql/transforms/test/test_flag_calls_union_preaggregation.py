@@ -388,19 +388,13 @@ class TestFlagCallsUnionPreaggregation(ClickhouseTestMixin, APIBaseTest):
         assert sorted(rewritten.results) == sorted(plain.results)
         assert min(row[0] for row in rewritten.results) == 2
 
-    @parameterized.expand(
-        [
-            (f"{name}_{mode.name.lower()}", expr, mode)
-            for name, expr in (("sorted", "arraySort(elements_chain_elements)"),)
-            for mode in (READ, ONLY)
-        ]
-    )
+    @parameterized.expand([(f"{mode.name.lower()}", mode) for mode in (READ, ONLY)])
     def test_key_on_a_column_typed_differently_in_each_branch_returns_the_same_rows(
-        self, _name: str, expr: str, mode: FlagEvaluationsMode
+        self, _name: str, mode: FlagEvaluationsMode
     ):
         # `events` stores element names as an Enum8 array, which the union converts to strings.
         query = (
-            f"SELECT {expr} AS k, count() AS c FROM events "
+            "SELECT arraySort(elements_chain_elements) AS k, count() AS c FROM events "
             f"WHERE event IN ('$autocapture', '$feature_flag_called') AND {WINDOW} GROUP BY k ORDER BY k"
         )
         rewritten = self._run(query, mode, False)

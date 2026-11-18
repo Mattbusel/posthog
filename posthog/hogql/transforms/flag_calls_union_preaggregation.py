@@ -265,6 +265,13 @@ def _aliases(node: ast.SelectQuery) -> dict[str, ast.Expr]:
     return aliases
 
 
+def _alias_target(node: ast.Field, plan: _Plan) -> ast.Expr | None:
+    """The expression of the SELECT alias that `node` refers to, or None when it refers to no alias in the plan."""
+    if isinstance(node.type, ast.FieldAliasType):
+        return plan.aliases.get(node.type.alias)
+    return None
+
+
 def _union_column(node: ast.Field, plan: _Plan) -> str | None:
     """The branch name of the union column that `node` reads, or None when it reads something else."""
     field_type = node.type
@@ -311,8 +318,9 @@ class _Shapes:
             column = _union_column(node, self.plan)
             if column is not None:
                 return self._intern(("union", column), frozenset({column}))
-            if isinstance(node.type, ast.FieldAliasType) and node.type.alias in self.plan.aliases:
-                return self.shape_id(self.plan.aliases[node.type.alias])
+            target = _alias_target(node, self.plan)
+            if target is not None:
+                return self.shape_id(target)
         reads: set[str] = set()
         parts = tuple(
             (item.name, self._part(getattr(node, item.name), reads))
@@ -352,7 +360,7 @@ class _ExpressionChecker(SyntaxVisitor):
         if _union_column(node, self.plan) is not None:
             return
         field_type = node.type
-        if isinstance(field_type, ast.FieldAliasType) and field_type.alias in self.plan.aliases:
+        if _alias_target(node, self.plan) is not None:
             return
         if isinstance(field_type, ast.LambdaArgumentType):
             return
@@ -542,8 +550,7 @@ def _check_alias_references(clauses: list[ast.Expr]) -> None:
 
 def _rewrite_select(select: list[ast.Expr], rewriter: _OuterRewriter, context: HogQLContext) -> list[ast.Expr]:
     rewritten: list[ast.Expr] = []
-    explicit = {column.alias for column in select if isinstance(column, ast.Alias)}
-    names: set[str] = set()
+    names = {column.alias for column in select if isinstance(column, ast.Alias)}
     printed = printed_aliases(select)
     for column in select:
         if isinstance(column, ast.Alias):
@@ -552,7 +559,6 @@ def _rewrite_select(select: list[ast.Expr], rewriter: _OuterRewriter, context: H
                 # The printer drops this hidden alias, and ClickHouse then names the column after its SQL.
                 raise _Decline("shadowed_hidden_alias")
             rewritten.append(ast.Alias(alias=column.alias, expr=expr, hidden=column.hidden, type=column.type))
-            names.add(column.alias)
             continue
         expr = rewriter.visit(column)
         if expr == column:
@@ -562,7 +568,7 @@ def _rewrite_select(select: list[ast.Expr], rewriter: _OuterRewriter, context: H
             # ClickHouse names such a column after its SQL, which the rewrite changes.
             raise _Decline("unaliased_non_call_column")
         name = call_column_name(column, context)
-        if name in names or name in explicit:
+        if name in names:
             # A later explicit alias of the same name would take this column's place, and the printer drops one of them.
             raise _Decline("repeated_column_name")
         names.add(name)
@@ -583,11 +589,12 @@ class _BranchInliner(CloningVisitor):
         column = _union_column(node, self.plan)
         if column is not None:
             return clone_expr(self.branch.columns[column], clear_types=False)
-        if isinstance(node.type, ast.FieldAliasType) and node.type.alias in self.plan.aliases:
+        target = _alias_target(node, self.plan)
+        if target is not None:
             self.alias_expansions += 1
             if self.alias_expansions > _MAX_ALIAS_EXPANSIONS:
                 raise _Decline("alias_expansion_too_large")
-            return self.visit(self.plan.aliases[node.type.alias])
+            return self.visit(target)
         return super().visit_field(node)
 
     def visit_alias(self, node: ast.Alias):

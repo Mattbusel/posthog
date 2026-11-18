@@ -1,5 +1,5 @@
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime
 from typing import TYPE_CHECKING, ClassVar, Optional, cast
@@ -180,11 +180,11 @@ def _group_type_index_of_blob(column_name: str) -> int | None:
     return int(group_column_match.group(1)) if group_column_match else None
 
 
-def printed_aliases(columns: Iterable[ast.Expr]) -> dict[str, ast.Alias]:
+def printed_aliases(columns: Sequence[ast.Expr]) -> dict[str, ast.Alias]:
     """The alias that the printer keeps for each alias name in a SELECT list: the last visible alias, or the last
     hidden alias when none is visible. The printer drops every other alias of that name."""
     found_aliases: dict[str, ast.Alias] = {}
-    for alias in reversed(list(columns)):
+    for alias in reversed(columns):
         if isinstance(alias, ast.Alias):
             if not found_aliases.get(alias.alias, None) or not alias.hidden:
                 found_aliases[alias.alias] = alias
